@@ -1,0 +1,41 @@
+name: Postar carrossel diário
+
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  postar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+
+      - name: Gerar imagens de hoje
+        run: python generate.py --hoje
+
+      - name: Enviar imagens ao repositório
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add images
+          git diff --cached --quiet || (git commit -m "imagens do dia" && git push)
+
+      - name: Publicar no Instagram
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+        run: python publish.py
+
+      - name: Registrar que foi publicado
+        run: |
+          touch posted.txt
+          git add posted.txt
+          git diff --cached --quiet || (git commit -m "registrado" && git push)
