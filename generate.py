@@ -1,6 +1,6 @@
 """Gera as imagens (JPEG, exigido pela API do Instagram) de cada carrossel."""
-import csv, os, sys, datetime
-from PIL import Image, ImageDraw, ImageFont
+import csv, os, re, sys, datetime
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from config import *
 
 FONTES = [
@@ -22,7 +22,8 @@ def carregar_posts(arquivo="posts.csv"):
     with open(arquivo, encoding="utf-8-sig", newline="") as f:
         for linha in csv.DictReader(f):
             slides = [s.strip() for s in linha["slides"].split("|") if s.strip()]
-            posts.append({"data": linha["data"].strip(), "slides": slides, "legenda": linha["legenda"].strip()})
+            posts.append({"data": linha["data"].strip(), "slides": slides, "legenda": linha["legenda"].strip(),
+                          "fundo": (linha.get("fundo") or "").strip()})
     return posts
 
 def quebrar(draw, texto, fnt, largura_max):
@@ -47,8 +48,24 @@ def fundo():
         d.line([(0, y), (LARGURA, y)], fill=cor)
     return img
 
-def desenhar_slide(texto, n, total):
-    img = fundo()
+def fundo_foto(nome):
+    """Foto de fundo (pasta fundos/), recortada para 4:5 e escurecida para o texto ficar legível."""
+    caminho = os.path.join("fundos", nome)
+    if not os.path.exists(caminho):
+        print(f"AVISO: imagem '{caminho}' não encontrada; usando fundo padrão.")
+        return None
+    img = ImageOps.exif_transpose(Image.open(caminho)).convert("RGB")
+    escala = max(LARGURA / img.width, ALTURA / img.height)
+    img = img.resize((round(img.width * escala), round(img.height * escala)), Image.LANCZOS)
+    x, y = (img.width - LARGURA) // 2, (img.height - ALTURA) // 2
+    img = img.crop((x, y, x + LARGURA, y + ALTURA))
+    return Image.blend(img, Image.new("RGB", (LARGURA, ALTURA), (0, 0, 0)), ESCURECER)
+
+def desenhar_slide(texto, n, total, fundo_padrao=""):
+    m = re.match(r"^\[(.+?)\]\s*(.*)$", texto)  # [foto.jpg] Texto  -> foto só neste slide
+    nome_foto = m.group(1).strip() if m else fundo_padrao
+    texto = m.group(2) if m else texto
+    img = (fundo_foto(nome_foto) if nome_foto else None) or fundo()
     d = ImageDraw.Draw(img)
     margem = 110
     area_w, area_h = LARGURA - 2 * margem, ALTURA - 2 * 260
@@ -87,7 +104,7 @@ def gerar_post(post, pasta_base="images"):
     total = len(post["slides"])
     for i, texto in enumerate(post["slides"], 1):
         caminho = os.path.join(pasta, f"slide_{i}.jpg")
-        desenhar_slide(texto, i, total).save(caminho, "JPEG", quality=92)
+        desenhar_slide(texto, i, total, post.get("fundo", "")).save(caminho, "JPEG", quality=92)
         caminhos.append(caminho)
     return caminhos
 
